@@ -1,5 +1,5 @@
 # IHA-4506 Advanced Robotics 2020
-In this repository, you will find the needed material during the course implementation.
+we'll use [4](https://github.com/modulabs/arm-control) for implementing and demonstrating the course assignments.  
 
 ## Prerequisit
 it is recommended to use the following requirements to avoid any unforseen error during the implementation of the codes.
@@ -24,20 +24,51 @@ $ sudo sh VMware-Player-15.5.6-16341506.x86_64.bundle  #change .bundle file name
 to avoid any possible incompatibility issue, please install ROS melodic from [ROS Melodic installation guide](http://wiki.ros.org/melodic/Installation/Ubuntu)
 
 ## installation
-follow the instructions in [Elfin Simulation](https://github.com/AdvancedRobotics-iha4506/arm-control) in order to install and prepare your simulation environment. 
+The github repository provided here is the modified version of [4] that some of its bugs are fixed and we'll maintain it during the course implementation. 
 
-before running any of the sample codes, you also need to issue the following command from your /catkin_ws directory so the built nodes and launch files could be found in terminal:
+### Download and build 
+
+    $ mkdir -p catkin_ws/src
+    $ cd ~/catkin_ws/src
+    $ git clone https://github.com/AdvancedRobotics-iha4506/ElfinSimulation.git
+    $ cd ~/catkin_ws/
+    $ catkin_make
+
+### Run
+Motion controllers in joint space
+
+    $ roslaunch elfin_gazebo elfin3_empty_world.launch controller:=gravity_comp_controller
+    or
+    $ roslaunch elfin_gazebo elfin3_empty_world.launch controller:=time_delay_controller
+    or
+    $ roslaunch elfin_gazebo elfin3_empty_world.launch controller:=computed_torque_controller
+    or
+    $ roslaunch elfin_gazebo elfin3_empty_world.launch controller:=computed_torque_clik_controller
+
+If you want to use motion and force controller in task space, then you may choose this controllers as follows:
+
+    $ roslaunch elfin_gazebo elfin3_experiment1_world.launch controller:=adaptive_impedance_controller
+    or
+    $ roslaunch elfin_gazebo elfin3_experiment2_world.launch controller:=adaptive_impedance_controller
+
+If you want to plot data in rqt graph, use rqt_plot.launch file. Customize perspective files to plot data you need.
+
+    $ roslaunch rqt_plot.launch controller:=gravity_comp_controller
 
 
-```
-$ source devel/setup.bash
-```
+
 ## Notes
 - If you are using VMWare and gazebo keeps crashing during run time, try the following:
 
 ```
 $ echo "export SVGA_VGPU10=0" >> ~/.bashrc
 ``` 
+- before running any of the sample codes, you also need to issue the following command from your /catkin_ws directory so the built nodes and launch files could be found in terminal:
+
+
+```
+$ source devel/setup.bash
+```
 ## References
 1. [ros_Control](http://wiki.ros.org/ros_control)
 2. [Write a new ros-controller](https://github.com/ros-controls/ros_control/wiki/controller_interface)
