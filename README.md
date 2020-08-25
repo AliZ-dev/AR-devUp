@@ -1,5 +1,5 @@
 # IHA-4506 Advanced Robotics 2020
-we'll use [4](https://github.com/modulabs/arm-control) for implementing and demonstrating the course assignments.  
+we'll use [[4]](https://github.com/modulabs/arm-control) for implementing and demonstrating the course assignments.  
 
 ## Prerequisit
 it is recommended to use the following requirements to avoid any unforseen error during the implementation of the codes.
