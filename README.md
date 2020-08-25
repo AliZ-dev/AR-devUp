@@ -1,14 +1,14 @@
 # IHA-4506 Advanced Robotics 2020
-we'll use [[4]](https://github.com/modulabs/arm-control) for implementing and demonstrating the course assignments.  
+We'll use [[4]](https://github.com/modulabs/arm-control) for implementing and demonstrating the course assignments.  
 
 ## Prerequisit
-it is recommended to use the following requirements to avoid any unforseen error during the implementation of the codes.
+It is recommended to use the following requirements to avoid any unforseen error during the implementation of the codes.
 
 - Ubuntu 18
 - ROS Melodic
 
 ## VMWare (Optional)
-if you are using windows or run an older version of ubuntu on your PC, you can use VMWare Workstation Player to run ubuntu 18 which is free for non-commercial use. In that case, follow the instructions below to install and prepare you virtual machine:
+If you are using windows or run an older version of ubuntu on your PC, you can use VMWare Workstation Player to run ubuntu 18 which is free for non-commercial use. In that case, follow the instructions below to install and prepare you virtual machine:
 
 - depending on your current version of operating system, download one of the installers from [VMWare Installers](https://www.vmware.com/fi/products/workstation-player/workstation-player-evaluation.html).
 - on windows, just run the installer GUI and follow the instructions
@@ -21,7 +21,7 @@ $ sudo sh VMware-Player-15.5.6-16341506.x86_64.bundle  #change .bundle file name
 - open VMWare Workstation Player and create an new environment from the ISO file and set the hardware properties as you wish.
 
 ## ROS melodic
-to avoid any possible incompatibility issue, please install ROS melodic from [ROS Melodic installation guide](http://wiki.ros.org/melodic/Installation/Ubuntu)
+To avoid any possible incompatibility issue, please install ROS melodic from [ROS Melodic installation guide](http://wiki.ros.org/melodic/Installation/Ubuntu)
 
 ## installation
 The github repository provided here is the modified version of [4] that some of its bugs are fixed and we'll maintain it during the course implementation. 
@@ -34,7 +34,7 @@ The github repository provided here is the modified version of [4] that some of 
     $ cd ~/catkin_ws/
     $ catkin_make
 
-### Run
+### Run examples
 Motion controllers in joint space
 
     $ roslaunch elfin_gazebo elfin3_empty_world.launch controller:=gravity_comp_controller
