@@ -23,7 +23,7 @@ $ sudo sh VMware-Player-15.5.6-16341506.x86_64.bundle  #change .bundle file name
 ## ROS melodic
 To avoid any possible incompatibility issue, please install ROS melodic from [ROS Melodic installation guide](http://wiki.ros.org/melodic/Installation/Ubuntu)
 
-## installation
+## Installation
 The github repository provided here is the modified version of [4] that some of its bugs are fixed and we'll maintain it during the course implementation. 
 
 ### Download and build 
