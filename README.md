@@ -24,7 +24,15 @@ $ sudo sh VMware-Player-15.5.6-16341506.x86_64.bundle  #change .bundle file name
 To avoid any possible incompatibility issue, please install ROS melodic from [ROS Melodic installation guide](http://wiki.ros.org/melodic/Installation/Ubuntu)
 
 ## Installation
-The github repository provided here is the modified version of [4] that some of its bugs are fixed and we'll maintain it during the course implementation. 
+The github repository provided here is the modified version of [4] that some of its bugs are fixed and we'll maintain it during the course implementation.
+
+### Install gazebo-ros-pkgs and gazebo-ros-control
+
+    $ sudo apt-get install ros-melodic-gazebo-ros-pkgs ros-melodic-gazebo-ros-control
+
+### Install effort-controllers to use torque-control interface
+
+    $ sudo apt-get install ros-melodic-effort-controllers
 
 ### Download and build 
 
