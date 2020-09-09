@@ -1,0 +1,7 @@
+\subsubsection usage Usage
+\verbatim
+<node name="passivity_controller" pkg="arm_controllers" type="passivity_controller">
+  <param name="alpha" type="double" value="0.1" />
+</node>
+\endverbatim
+

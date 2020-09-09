@@ -1,0 +1,11 @@
+1- in ~/catkin_ws: source devel/setup.bash
+2- roslaunch elfin_gazebo elfin3_empty_world.launch controller:=gravity_comp_controller
+3- in new tab/terminal: 
+
+rostopic pub -r 10 /elfin/gravity_comp_controller/command std_msgs/Float64MultiArray "layout:
+  dim:
+  - label: ''
+    size: 6
+    stride: 0
+  data_offset: 0
+data: [0.5,0.2,0.1,0.22,0.45,0.1]"

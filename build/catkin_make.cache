@@ -1,0 +1,2 @@
+arm_controllers:elfin/elfin_description:elfin/elfin_gazebo
+-DCATKIN_DEVEL_PREFIX=/home/tarek/repos/ar-devup/devel -DCMAKE_INSTALL_PREFIX=/home/tarek/repos/ar-devup/install -G Unix Makefiles
