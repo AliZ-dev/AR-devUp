@@ -150,6 +150,7 @@ namespace arm_controllers{
 			// command subscriber
 			commands_buffer_.writeFromNonRT(std::vector<double>(n_joints_, 0.0));
 			command_sub_ = n.subscribe<std_msgs::Float64MultiArray>("command", 1, &GravityCompController::commandCB, this);
+                        failsafe_sub_ = n.subscribe<std_msgs::Float64MultiArray>("fail_state", 1, &GravityCompController::failsafeCB, this);
 
 			// Start realtime state publisher
 			controller_state_pub_.reset(
@@ -187,6 +188,7 @@ namespace arm_controllers{
 
 		void commandCB(const std_msgs::Float64MultiArrayConstPtr& msg)
 		{
+                        if (fail_state){return;}
 			if(msg->data.size()!=n_joints_)
 			{ 
 			ROS_ERROR_STREAM("Dimension of command (" << msg->data.size() << ") does not match number of joints (" << n_joints_ << ")! Not executing!");
@@ -194,6 +196,26 @@ namespace arm_controllers{
 			}
 			commands_buffer_.writeFromNonRT(msg->data);
 		}
+
+		void failsafeCB(const std_msgs::Float64MultiArrayConstPtr& msg)
+		{
+			if(msg->data.size()!=n_joints_)
+			{ 
+			ROS_ERROR_STREAM("Dimension of command (" << msg->data.size() << ") does not match number of joints (" << n_joints_ << ")! Not executing!");
+			return; 
+			}
+                        if(msg->data[0] == -999.9 && msg->data[1] == -999.9){
+                            std::cout << "FAIL STATE ENDED!" << std::endl;
+                            fail_state = false;
+                        }
+                        else{
+                            fail_state = true;
+                            std::cout << msg->data[0] << " - " << msg->data[1] << std::endl;
+                            commands_buffer_.writeFromNonRT(msg->data);
+                        }
+			
+		}
+
 
   		void update(const ros::Time& time, const ros::Duration& period)
   		{
@@ -207,12 +229,20 @@ namespace arm_controllers{
 			{
 				q_cmd_old = q_cmd_(i);
 
-				//q_cmd_(i) = commands[i];				
+				if (commands[i]!=0) {
+					q_cmd_(i) = commands[i];
+				}
+				else {
 				q_cmd_(i) = 45*D2R*sin(PI/2*t);
+				}
 
 				enforceJointLimits(q_cmd_(i), i);
-				// qdot_cmd_(i) = ( q_cmd_(i) - q_cmd_old )/dt;
+				if (commands[i]!=0) {
+				qdot_cmd_(i) = ( q_cmd_(i) - q_cmd_old )/dt;
+				}
+				else {
 				qdot_cmd_(i) = 45*D2R*PI/2*cos(PI/2*t);
+				}
 				
 				q_(i) = joints_[i].getPosition();
 				qdot_(i) = joints_[i].getVelocity();
@@ -305,7 +335,9 @@ namespace arm_controllers{
 			}
 		}
 	private:
+                //Custom
 		int loop_count_;
+                bool fail_state = false;
 
 		// joint handles
 		unsigned int n_joints_;
@@ -333,6 +365,7 @@ namespace arm_controllers{
 
 		// topic
 		ros::Subscriber command_sub_;
+                ros::Subscriber failsafe_sub_;
 		boost::scoped_ptr<
 			realtime_tools::RealtimePublisher<
 				arm_controllers::ControllerJointState> > controller_state_pub_;

@@ -1,0 +1,19 @@
+It is possible to test a simple rospy command publisher, and a "safety" module:
+
+Assume all of the following commands are done in the catkin workspace root dir.
+
+1- catkin_make
+
+2- source devel/setup.bash
+
+3- roslaunch elfin_gazebo elfin3_empty_world.launch controller:=gravity_comp_controller
+
+4- in new terminal (this doesn't need catkin workspace):
+	roscore
+
+5- in new terminal (this launches a simple tkinter control program):
+	./src/ar-devup/src/arm_controllers/scripts/publish_test.py
+
+6- in new terminal (this launches a script which observes the arm state, and reacts to certain situation):
+	./src/ar-devup/src/arm_controllers/scripts/safety_test.py
+
