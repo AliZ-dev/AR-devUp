@@ -374,4 +374,3 @@ namespace arm_controllers{
 }
 
 PLUGINLIB_EXPORT_CLASS(arm_controllers::GravityCompController, controller_interface::ControllerBase)
-

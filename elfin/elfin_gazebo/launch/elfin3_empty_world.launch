@@ -8,6 +8,7 @@
   <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen" args="-urdf -model elfin3 -param robot_description"/>
 
   <!-- Controller: 
+      - custom_torque_controller
       - gravity_comp_controller
       - computed_torque_controller
       - passivity_controller

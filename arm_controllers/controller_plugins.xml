@@ -18,6 +18,12 @@
     </description>
   </class>
 
+  <class name="arm_controllers/Custom_Torque_Controller" type="arm_controllers::Custom_Torque_Controller" base_class_type="controller_interface::ControllerBase">
+    <description>
+	    Custom Torque Controller
+    </description>
+  </class>
+
   <class name="arm_controllers/Computed_Torque_CLIK_Controller" type="arm_controllers::Computed_Torque_CLIK_Controller" base_class_type="controller_interface::ControllerBase">
     <description>
 	    Computed Torque Controller with Closed Loop Inverse Kinematics
