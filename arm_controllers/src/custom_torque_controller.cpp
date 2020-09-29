@@ -7,6 +7,7 @@
 
 #include <urdf/model.h>
 
+#include <Eigen/LU>
 // from kdl packages
 #include <kdl/tree.hpp>
 #include <kdl/kdl.hpp>
@@ -14,6 +15,8 @@
 #include <kdl_parser/kdl_parser.hpp>
 #include <kdl/chaindynparam.hpp>              // inverse dynamics
 #include <kdl/jntarrayacc.hpp>
+#include <kdl/jntarray.hpp>
+#include <math.h>
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
@@ -258,9 +261,6 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         e_.data = qd_.data - q_.data;
         e_dot_.data = qd_dot_.data - qdot_.data;
         e_int_.data = qd_.data - q_.data; // (To do: e_int 업데이트 필요요)
-
-        KDL::JntArrayAcc qddot_(q_, qdot_);
-        e_ddot_.data = qd_ddot_.data - qddot_.dderiv().data;
         
 
         // *** 2.2.1 Compute model(M,C,G) ***
@@ -268,21 +268,38 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         id_solver_->JntToCoriolis(q_, qdot_, C_);
         id_solver_->JntToGravity(q_, G_); 
 
+        // WIP to figure out omega
+        KDL::JntArray omega;
+        KDL::JntArray omega_x2;
+        M_inv_.data = M_.data.inverse();
+        omega_x2.data = M_inv_.data * Kd_.data;
+        KDL::Divide(omega_x2, 2.0, omega);
+        //for (int i = 0; i < n_joints_; i++)
+        //{
+        //    Kp_(i) = 64;
+        //    Kd_(i) = 16;
+        //}
+        //std::cout << "OMEGA: " << omega.data << std::endl;
+
         // *** 2.2.2 gravity + PD as in slides ***
         tau_PD_grav_.data = G_.data + Kp_.data.cwiseProduct(e_.data) - Kd_.data.cwiseProduct(qdot_.data);
 
-        // *** TODO: 2.2.3 velocity control as in slides ***
-        vel_control_.data = e_ddot_.data + Kd_.data.cwiseProduct(e_dot_.data);
 
         // *** 2.3 Apply Torque Command to Actuator ***
         aux_d_.data = M_.data * (qd_ddot_.data + Kp_.data.cwiseProduct(e_.data) + Kd_.data.cwiseProduct(e_dot_.data));
         comp_d_.data = C_.data + G_.data;
         tau_d_.data = aux_d_.data + comp_d_.data;
 
+        // *** 2.4 velocity and kinematic control as in slides ***
+        qddot_.data = M_.data.inverse() * (tau_PD_grav_.data - (C_.data.cwiseProduct(qdot_.data) + G_.data));
+        e_ddot_.data = qd_ddot_.data - qddot_.data;
+        vel_control_.data = qddot_.data + Kd_.data.cwiseProduct(e_dot_.data);
+        kine_control_.data = M_.data * vel_control_.data + C_.data.cwiseProduct(qdot_.data) + G_.data;
+
         for (int i = 0; i < n_joints_; i++)
         {
-            //joints_[i].setCommand(vel_control_(i));
-            joints_[i].setCommand(tau_PD_grav_(i));
+            joints_[i].setCommand(kine_control_(i));
+            //joints_[i].setCommand(tau_PD_grav_(i));
             // joints_[i].setCommand(tau_d_(i));
             // joints_[i].setCommand(0.0);
         }
@@ -456,6 +473,7 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
 
     // kdl M,C,G
     KDL::JntSpaceInertiaMatrix M_; // intertia matrix
+    KDL::JntSpaceInertiaMatrix M_inv_;
     KDL::JntArray C_;              // coriolis
     KDL::JntArray G_;              // gravity torque vector
     KDL::Vector gravity_;
@@ -466,7 +484,7 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
     // Joint Space State
     KDL::JntArray qd_, qd_dot_, qd_ddot_;
     KDL::JntArray qd_old_;
-    KDL::JntArray q_, qdot_;
+    KDL::JntArray q_, qdot_, qddot_;
     KDL::JntArray e_, e_dot_, e_int_, e_ddot_;
     
 
@@ -476,6 +494,7 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
     KDL::JntArray tau_d_;
     KDL::JntArray tau_PD_grav_;
     KDL::JntArray vel_control_;
+    KDL::JntArray kine_control_;
 
     // gains
     KDL::JntArray Kp_, Ki_, Kd_;
