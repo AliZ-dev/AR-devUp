@@ -17,6 +17,10 @@
 #include <kdl/jntarrayacc.hpp>
 #include <kdl/jntarray.hpp>
 #include <math.h>
+#include <numeric>
+#include <kdl/chainjnttojacsolver.hpp>
+#include <kdl/chainfksolver.hpp>
+#include <kdl/chainfksolverpos_recursive.hpp>
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
@@ -61,6 +65,7 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         Kp_.resize(n_joints_);
         Kd_.resize(n_joints_);
         Ki_.resize(n_joints_);
+        Jacobian_q_.resize(n_joints_);
 
         std::vector<double> Kp(n_joints_), Ki(n_joints_), Kd(n_joints_);
         for (size_t i = 0; i < n_joints_; i++)
@@ -182,6 +187,8 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         gravity_(2) = -9.81;            // 0: x-axis 1: y-axis 2: z-axis
 
         id_solver_.reset(new KDL::ChainDynParam(kdl_chain_, gravity_));
+        FKSolver_.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_));
+        jnt_to_jac_solver_.reset(new KDL::ChainJntToJacSolver(kdl_chain_));
 
         // ********* 5. 각종 변수 초기화 *********
 
@@ -204,6 +211,7 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         M_.resize(kdl_chain_.getNrOfJoints());
         C_.resize(kdl_chain_.getNrOfJoints());
         G_.resize(kdl_chain_.getNrOfJoints());
+
 
         // ********* 6. ROS 명령어 *********
         // 6.1 publisher
@@ -268,18 +276,52 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         id_solver_->JntToCoriolis(q_, qdot_, C_);
         id_solver_->JntToGravity(q_, G_); 
 
-        // WIP to figure out omega
-        KDL::JntArray omega;
-        KDL::JntArray omega_x2;
-        M_inv_.data = M_.data.inverse();
-        omega_x2.data = M_inv_.data * Kd_.data;
-        KDL::Divide(omega_x2, 2.0, omega);
-        //for (int i = 0; i < n_joints_; i++)
-        //{
-        //    Kp_(i) = 64;
-        //    Kd_(i) = 16;
-        //}
-        //std::cout << "OMEGA: " << omega.data << std::endl;
+        FKSolver_->JntToCart(q_, fKine_pos_Frame_);
+        FKSolver_->JntToCart(qd_, fKine_des_Frame_);
+        double rotX_pos, rotY_pos, rotZ_pos, rotW_pos, rotX_des, rotY_des, rotZ_des, rotW_des;
+        fKine_pos_Frame_.M.GetQuaternion(rotX_pos, rotY_pos, rotZ_pos, rotW_pos);
+        fKine_des_Frame_.M.GetQuaternion(rotX_des, rotY_des, rotZ_des, rotW_des);
+
+        KDL::JntArray Xd_, Xpos_, Xe_, Xe_raw;
+        Xd_.resize(6); Xpos_.resize(6); Xe_.resize(6);
+        Xd_(0) = fKine_des_Frame_.p[0];
+        Xd_(1) = fKine_des_Frame_.p[1];
+        Xd_(2) = fKine_des_Frame_.p[2];
+        Xd_(3) = rotX_des;
+        Xd_(4) = rotY_des;
+        Xd_(5) = rotZ_des;
+
+        Xpos_(0) = fKine_pos_Frame_.p[0];
+        Xpos_(1) = fKine_pos_Frame_.p[1];
+        Xpos_(2) = fKine_pos_Frame_.p[2];
+        Xpos_(3) = rotX_pos;
+        Xpos_(4) = rotY_pos;
+        Xpos_(5) = rotZ_pos;
+
+        Xe_.data = Xd_.data - Xpos_.data;
+        Xe_.data(0) *= 1.0;
+        Xe_.data(1) *= 1.5;
+        Xe_.data(2) *= 1.5;
+        Xe_.data(3) *= 0.3;
+        Xe_.data(4) *= 0.3;
+        Xe_.data(5) *= 0.3;
+
+        
+        jnt_to_jac_solver_->JntToJac(q_, Jacobian_q_);
+        
+        for (int i = 0 ; i < 6 ; i++)
+        {
+            xdot_(i) = 0;
+            for (int j = 0 ; j < n_joints_ ; j++)
+                xdot_(i) += Jacobian_q_(i,j) * qdot_(j);
+        }
+        for(int i = 0; i < 6; i++){
+            Xe_.data(i) += xdot_(i);
+        }
+        KDL::JntArray velocities_;
+        
+        velocities_.data = Jacobian_q_.data.inverse() * Xe_.data;
+        //std::cout << velocities_.data[0] << " - " << velocities_.data[1] << " - " << velocities_.data[2] << " - " << velocities_.data[3] << " - " << velocities_.data[4] << " - " << velocities_.data[5] << std::endl;
 
         // *** 2.2.2 gravity + PD as in slides ***
         tau_PD_grav_.data = G_.data + Kp_.data.cwiseProduct(e_.data) - Kd_.data.cwiseProduct(qdot_.data);
@@ -291,16 +333,18 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         tau_d_.data = aux_d_.data + comp_d_.data;
 
         // *** 2.4 velocity and kinematic control as in slides ***
-        qddot_.data = M_.data.inverse() * (tau_PD_grav_.data - (C_.data.cwiseProduct(qdot_.data) + G_.data));
-        e_ddot_.data = qd_ddot_.data - qddot_.data;
+        qddot_.data = M_.data.inverse() * (tau_d_.data - (C_.data + G_.data));
+        e_dot_.data = velocities_.data - qdot_.data;
         vel_control_.data = qddot_.data + Kd_.data.cwiseProduct(e_dot_.data);
-        kine_control_.data = M_.data * vel_control_.data + C_.data.cwiseProduct(qdot_.data) + G_.data;
+        //kine_control_.data = M_.data * vel_control_.data + C_.data + G_.data;
 
         for (int i = 0; i < n_joints_; i++)
         {
-            joints_[i].setCommand(kine_control_(i));
+            //joints_[i].setCommand(velocities_(i));
+            //joints_[i].setCommand(kine_control_(i));
+            joints_[i].setCommand(vel_control_(i));
             //joints_[i].setCommand(tau_PD_grav_(i));
-            // joints_[i].setCommand(tau_d_(i));
+            //joints_[i].setCommand(tau_d_(i));
             // joints_[i].setCommand(0.0);
         }
 
@@ -368,6 +412,13 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
         SaveData_[34] = e_(3);
         SaveData_[35] = e_(4);
         SaveData_[36] = e_(5);
+
+        j1_avg.push_back(abs(R2D * e_(0)));
+        j2_avg.push_back(abs(R2D * e_(1)));
+        j3_avg.push_back(abs(R2D * e_(2)));
+        j4_avg.push_back(abs(R2D * e_(3)));
+        j5_avg.push_back(abs(R2D * e_(4)));
+        j6_avg.push_back(abs(R2D * e_(5)));
 
         // Error velocity in joint space (unit: rad/s)
         SaveData_[37] = e_dot_(0);
@@ -451,6 +502,37 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
             printf("%f\n", R2D * e_(5));
             printf("\n");
 
+            auto num_vals = j1_avg.size(); 
+            double average = 0.0;
+            if ( num_vals != 0) {
+                average = std::accumulate( j1_avg.begin(), j1_avg.end(), 0.0) / num_vals; 
+                std::cout << "JOINT AVERAGES: " << std::to_string(average) << " - ";
+            }
+            average = 0.0;
+            if ( num_vals != 0) {
+                average = std::accumulate( j2_avg.begin(), j2_avg.end(), 0.0) / num_vals; 
+                std::cout << std::to_string(average) << " - ";
+            }
+            average = 0.0;
+            if ( num_vals != 0) {
+                average = std::accumulate( j3_avg.begin(), j3_avg.end(), 0.0) / num_vals; 
+                std::cout << std::to_string(average) << " - ";
+            }
+            average = 0.0;
+            if ( num_vals != 0) {
+                average = std::accumulate( j4_avg.begin(), j4_avg.end(), 0.0) / num_vals; 
+                std::cout << std::to_string(average) << " - ";
+            }
+            average = 0.0;
+            if ( num_vals != 0) {
+                average = std::accumulate( j5_avg.begin(), j5_avg.end(), 0.0) / num_vals; 
+                std::cout << std::to_string(average) << " - ";
+            }
+            average = 0.0;
+            if ( num_vals != 0) {
+                average = std::accumulate( j6_avg.begin(), j6_avg.end(), 0.0) / num_vals; 
+                std::cout << std::to_string(average) << std::endl;
+            }
 
             count = 0;
         }
@@ -486,6 +568,10 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
     KDL::JntArray qd_old_;
     KDL::JntArray q_, qdot_, qddot_;
     KDL::JntArray e_, e_dot_, e_int_, e_ddot_;
+    KDL::Jacobian Jacobian_q_;
+    boost::scoped_ptr<KDL::ChainFkSolverPos>    FKSolver_;
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;                      
+    KDL::Twist  xdot_;   // Cart velocity
     
 
     // Input
@@ -498,9 +584,18 @@ class Custom_Torque_Controller : public controller_interface::Controller<hardwar
 
     // gains
     KDL::JntArray Kp_, Ki_, Kd_;
+    KDL::Frame fKine_pos_Frame_;
+    KDL::Frame fKine_des_Frame_;
+
 
     // save the data
     double SaveData_[SaveDataMax];
+    std::vector<double> j1_avg;
+    std::vector<double> j2_avg;
+    std::vector<double> j3_avg;
+    std::vector<double> j4_avg;
+    std::vector<double> j5_avg;
+    std::vector<double> j6_avg;
 
     // ros publisher
     ros::Publisher pub_qd_, pub_q_, pub_e_;
