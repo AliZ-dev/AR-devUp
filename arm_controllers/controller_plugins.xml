@@ -30,6 +30,12 @@
     </description>
   </class>
 
+  <class name="arm_controllers/Task_Space_Controller" type="arm_controllers::Task_Space_Controller" base_class_type="controller_interface::ControllerBase">
+    <description>
+	    Inverse dynamics task space controller
+    </description>
+  </class>
+
   <class name="arm_controllers/AdaptiveImpedanceController" type="arm_controllers::AdaptiveImpedanceController" base_class_type="controller_interface::ControllerBase">
     <description>
 	    Adaptive Impedance Controller

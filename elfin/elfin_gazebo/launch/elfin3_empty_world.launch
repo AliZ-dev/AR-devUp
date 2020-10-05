@@ -13,7 +13,8 @@
       - computed_torque_controller
       - passivity_controller
       - time_delay_controller
-      - computed_torque_clik_controller -->
+      - computed_torque_clik_controller
+      - task_space_controller -->
   <rosparam file="$(find elfin_gazebo)/config/$(arg controller).yaml" command="load"/>
 
   <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false"
