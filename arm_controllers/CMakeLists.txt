@@ -64,7 +64,7 @@ install(TARGETS ${PROJECT_NAME}
 )
 
 
-catkin_install_python(PROGRAMS scripts/safety_test.py scripts/publish_test.py
+catkin_install_python(PROGRAMS scripts/safety_test.py scripts/publish_test.py scripts/task_space_publisher.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

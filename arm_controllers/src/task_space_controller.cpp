@@ -390,6 +390,7 @@ class Task_Space_Controller : public controller_interface::Controller<hardware_i
             xd_ddot_(5) = 0;
         }
 
+
         // ********* 2. Inverse Kinematics *********
         // *** 2.0 Error Definition in Task Space ***
         ex_temp_ = diff(x_, xd_);
