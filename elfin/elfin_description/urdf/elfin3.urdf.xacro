@@ -2,12 +2,16 @@
   name="elfin3" xmlns:xacro="http://www.ros.org/wiki/xacro">
   
   <xacro:include filename="$(find elfin_description)/urdf/materials.xacro" />
+
+  <xacro:include filename="$(find elfin_description)/kinect_ros/model.sdf" />
   
   <xacro:include filename="$(find elfin_description)/urdf/elfin_robot.gazebo" />
   
   <xacro:include filename="$(find elfin_description)/urdf/elfin_transmission.xacro" />
   
   <xacro:property name="PI" value="3.1415926535897931"/>
+
+  <xacro:property name="camera_link" value="0.05" />
   
   <link name="world"/>
   
@@ -442,5 +446,38 @@
     <child
       link="elfin_dummy_gripper" />
   </joint>
+
+
+  <joint name="camera_joint" type="fixed">
+    <axis xyz="0 1 0" />
+    <origin xyz="0 0 0.1" rpy="0 0 ${-PI/2}" />
+    <parent link="elfin_link6"/>
+    <child link="camera"/>
+  </joint>
+
+  <!-- Camera -->
+  <link name="camera">
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+    <box size="${camera_link} ${camera_link} ${camera_link}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+    <box size="${camera_link} ${camera_link} ${camera_link}"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+
+    <inertial>
+      <mass value="1e-5" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6" />
+    </inertial>
+  </link>
+
   
 </robot>
