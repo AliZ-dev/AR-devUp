@@ -44,6 +44,7 @@ add_library(${PROJECT_NAME}
   src/adaptive_variable_impedance_controller.cpp
   src/passivity_controller.cpp
   src/task_space_controller.cpp
+  src/visual_servo_controller.cpp
 )
 
 target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})

@@ -36,6 +36,12 @@
     </description>
   </class>
 
+  <class name="arm_controllers/Visual_Servo_Controller" type="arm_controllers::Visual_Servo_Controller" base_class_type="controller_interface::ControllerBase">
+    <description>
+	    Visual servoing controller
+    </description>
+  </class>
+
   <class name="arm_controllers/AdaptiveImpedanceController" type="arm_controllers::AdaptiveImpedanceController" base_class_type="controller_interface::ControllerBase">
     <description>
 	    Adaptive Impedance Controller
