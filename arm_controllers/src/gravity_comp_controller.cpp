@@ -188,7 +188,7 @@ namespace arm_controllers{
 
 		void commandCB(const std_msgs::Float64MultiArrayConstPtr& msg)
 		{
-                        if (fail_state){return;}
+            if (fail_state){return;}
 			if(msg->data.size()!=n_joints_)
 			{ 
 			ROS_ERROR_STREAM("Dimension of command (" << msg->data.size() << ") does not match number of joints (" << n_joints_ << ")! Not executing!");
@@ -204,15 +204,15 @@ namespace arm_controllers{
 			ROS_ERROR_STREAM("Dimension of command (" << msg->data.size() << ") does not match number of joints (" << n_joints_ << ")! Not executing!");
 			return; 
 			}
-                        if(msg->data[0] == -999.9 && msg->data[1] == -999.9){
-                            std::cout << "FAIL STATE ENDED!" << std::endl;
-                            fail_state = false;
-                        }
-                        else{
-                            fail_state = true;
-                            std::cout << msg->data[0] << " - " << msg->data[1] << std::endl;
-                            commands_buffer_.writeFromNonRT(msg->data);
-                        }
+			if(msg->data[0] == -999.9 && msg->data[1] == -999.9){
+				std::cout << "FAIL STATE ENDED!" << std::endl;
+				fail_state = false;
+			}
+			else{
+				fail_state = true;
+				std::cout << msg->data[0] << " - " << msg->data[1] << std::endl;
+				commands_buffer_.writeFromNonRT(msg->data);
+			}
 			
 		}
 
@@ -335,9 +335,9 @@ namespace arm_controllers{
 			}
 		}
 	private:
-                //Custom
+        //Custom
 		int loop_count_;
-                bool fail_state = false;
+        bool fail_state = false;
 
 		// joint handles
 		unsigned int n_joints_;

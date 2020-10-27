@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import rospy
 from std_msgs.msg import Float64MultiArray, MultiArrayDimension
-import tkinter as tk
+import Tkinter as tk
 from math import floor, ceil, pi
 
 
