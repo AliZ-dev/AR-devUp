@@ -215,19 +215,17 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
 
         q_.data = Eigen::VectorXd::Zero(n_joints_);
         qdot_.data = Eigen::VectorXd::Zero(n_joints_);
-        xdot_.data = Eigen::VectorXd::Zero(n_joints_);
+        xdot_ = Eigen::VectorXd::Zero(n_joints_);
 
         e_.data = Eigen::VectorXd::Zero(n_joints_);
         e_dot_.data = Eigen::VectorXd::Zero(n_joints_);
         e_int_.data = Eigen::VectorXd::Zero(n_joints_);
 
-        aruco_pose_.data = Eigen::VectorXd::Zero(6);
-        aruco_pose_(0) = 0;
-        aruco_pose_(1) = -1.6;
-        aruco_pose_(2) = 0.7;
-        aruco_pose_(3) = 1.57;
-        aruco_pose_(4) = -1.57;
-        aruco_pose_(5) = 3.14;
+       
+        aruco_pose_.p(0) = 0;
+        aruco_pose_.p(1) = -1.0;
+        aruco_pose_.p(2) = 0.7;
+        aruco_pose_.M.RPY(1.57, -1.57, 3.14);
 
 
 
@@ -237,7 +235,8 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
         M_.resize(kdl_chain_.getNrOfJoints());
         C_.resize(kdl_chain_.getNrOfJoints());
         G_.resize(kdl_chain_.getNrOfJoints());
-        jnt_to_jac_solver_->JntToJac(q_, Jacobian_q_);
+        J_.resize(kdl_chain_.getNrOfJoints());
+
 
 
         // ********* 6. ROS 명령어 *********
@@ -284,39 +283,136 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
 
         // ********* 1. Desired Trajecoty in Joint Space *********
 
-        for (size_t i = 0; i < n_joints_; i++)
-        {
+        //for (size_t i = 0; i < n_joints_; i++)
+       // {
             //qd_ddot_(i) = -M_PI * M_PI / 4 * 45 * KDL::deg2rad * sin(M_PI / 2 * t); 
             //qd_dot_(i) = M_PI / 2 * 45 * KDL::deg2rad * cos(M_PI / 2 * t);          
         //    qd_(i) = 45 * KDL::deg2rad * sin(M_PI / 2* t);
-            qd_ddot_(i) = 0;
-            qd_dot_(i) = 0;
-        }
-        xd_.p(0) = 0.0;
-        xd_.p(1) = -0.25;
-        xd_.p(2) = 0.5;
-        xd_.M.RPY(0, 0, 0);
+         //   qd_ddot_(i) = 0;
+       //     qd_dot_(i) = 0;
+     //   }
 
-        qd_(0) = 1.55;
-        qd_(4) = -1.60;
+        if(t < 4){
+            qd_(0) = 1.55;
+            qd_(1) = 0.15;
+            qd_(2) = -1.0;
+            qd_(3) = 0.0;
+            qd_(4) = -2.05;
+        }
+
 
 
         // Camera pos
         FKSolver_->JntToCart(q_, x_);
-       // xdot_ = J_.data * qdot_.data;
 
-        KDL::Frame cam_frame_, aruco_frame_;
-        cam_frame_.p(0) = tvec(0);
-        cam_frame_.p(1) = tvec(1);
-        cam_frame_.p(2) = tvec(2);
-        cam_frame_.M.Quaternion(rvec[0], rvec[1], rvec[2], aruco_pose_(6));
+        // *** 2.1 computing Jacobian J(q) ***
+        jnt_to_jac_solver_->JntToJac(q_, J_);
+
+        // *** 2.2 computing Jacobian transpose/inversion ***
+        J_transpose_ = J_.data.transpose();
+        xdot_ = J_.data * qdot_.data;
+       
+
+        KDL::Frame obj_wrt_cam_, aruco_frame_, cam_to_obj_;
+
+     //   cam_to_obj_.M.Quaternion(rvec[0], rvec[1], rvec[2], rvec[3]);
+     //   cam_to_obj_.M.SetInverse();
+     //   cam_to_obj_.p(0) = -tvec[0];
+     //   cam_to_obj_.p(1) = -tvec[1];
+     //   cam_to_obj_.p(2) = -tvec[2];
+
+        obj_wrt_cam_.p(0) = tvec(0);
+        obj_wrt_cam_.p(1) = tvec(1);
+        obj_wrt_cam_.p(2) = tvec(2);
+       // obj_wrt_cam_.M.Quaternion(rvec[0], rvec[1], rvec[2], rvec[3]);
+        obj_wrt_cam_.M.RPY(rvec[0], rvec[1], rvec[2]);
 
 
-        aruco_frame_ = x_ * cam_frame_;
-        std::cout << " x " << aruco_frame_.p(0) << "  y " << aruco_frame_.p(1) << "  z " << aruco_frame_.p(2) << std::endl;
+        double rx, ry, rz;
+        cam_to_obj_ = obj_wrt_cam_.Inverse();
+        cam_to_obj_.M.GetRPY(rx, ry, rz);
 
-        
 
+        std::cout << " Obj wrt cam: " << obj_wrt_cam_.p[0] << "  "  << obj_wrt_cam_.p[1] << "  "  << obj_wrt_cam_.p[2] << "  "  << rvec[0] << "  "  << rvec[1] << "  "  << rvec[2] << std::endl;
+
+        KDL::Twist tf_des_to_cam_twist_ = diff(xd_, obj_wrt_cam_);
+        KDL::Frame tf_des_to_cam_;
+
+        tf_des_to_cam_.p(0) = tf_des_to_cam_twist_.vel(0);
+        tf_des_to_cam_.p(1) = tf_des_to_cam_twist_.vel(1);
+        tf_des_to_cam_.p(2) = tf_des_to_cam_twist_.vel(2);
+        tf_des_to_cam_.M.RPY(tf_des_to_cam_twist_.rot(0), tf_des_to_cam_twist_.rot(1), tf_des_to_cam_twist_.rot(2));
+
+        // DESIRED POSE 
+        if(aruco_detected){
+            xd_.p(0) = 0.01;
+            xd_.p(1) = 0.0;
+            xd_.p(2) = 0.25;
+            xd_.M = KDL::Rotation(KDL::Rotation::RPY(0,0,0));
+        }
+
+
+        tf_des_to_cam_ = xd_ * obj_wrt_cam_.Inverse();
+
+        KDL::Frame world_to_desired_ = x_ * tf_des_to_cam_.Inverse();
+
+       // double rx, ry, rz;
+        ex_(0) = -tf_des_to_cam_.p(0);
+        ex_(1) = -tf_des_to_cam_.p(1);
+        ex_(2) = -tf_des_to_cam_.p(2);
+        tf_des_to_cam_.M.GetRPY(rx, ry, rz);
+        ex_(3) = -rx;
+        ex_(4) = -ry;
+        ex_(5) = -rz;
+
+        KDL::Chain chain;
+        kdl_tree_.getChain("world", "camera", chain);
+
+
+
+        Eigen::Matrix<double, 6, 6> T_A;       
+        Eigen::Matrix<double, 6, 6> rot_transposes;
+        Eigen::Matrix<double, 3, 3> R_d;
+        Eigen::Matrix<double, 3, 3> R_d_T;
+
+        R_d.setZero();
+        for(int row = 0; row < 3; row++){
+            for(int col = 0; col < 3; col++){
+               // R_d(row, col) = tf_des_to_cam_.M(row, col);
+                R_d(row, col) = world_to_desired_.M(row, col);
+            }
+        }
+        R_d_T = R_d.transpose();
+
+
+
+        T_A.setZero();
+        for(int row = 0; row < 3; row++){
+            T_A(row, row) = 1.0;
+            for(int col = 0; col < 3; col++){
+                T_A(row + 3, col + 3) = tf_des_to_cam_.M(row, col);
+            }
+        }
+
+
+        rot_transposes.setZero();
+     //   KDL::Rotation tf_rot_transpose = tf_des_to_cam_.M.Inverse();
+        for(int row = 0; row < 3; row++){
+            for(int col = 0; col < 3; col++){
+                rot_transposes(row, col) = R_d_T(row, col);
+                rot_transposes(row + 3, col + 3) = R_d_T(row, col);
+            }
+        }
+
+
+
+        KDL::Jacobian J_Ad;
+        J_Ad.data = T_A.inverse() * rot_transposes * J_.data;
+       // J_Ad.data = T_A.inverse() * J_.data;
+
+
+        std::cout << " Des to cam: " << tf_des_to_cam_.p[0] << "  "  << tf_des_to_cam_.p[1] << "  "  << tf_des_to_cam_.p[2] << std::endl;
+        std::cout << "        ex_: " << ex_(0) << "  "  << ex_(1) << "  "  << ex_(2) << std::endl;
 
         // ********* 2. Motion Controller in Joint Space*********
         // *** 2.1 Error Definition in Joint Space ***
@@ -324,59 +420,29 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
         e_dot_.data = qd_dot_.data - qdot_.data;
         e_int_.data = qd_.data - q_.data; // (To do: e_int 업데이트 필요요)
         
-
         // *** 2.2.1 Compute model(M,C,G) ***
         id_solver_->JntToMass(q_, M_);
         id_solver_->JntToCoriolis(q_, qdot_, C_);
         id_solver_->JntToGravity(q_, G_); 
 
-        FKSolver_->JntToCart(q_, fKine_pos_Frame_);
-        FKSolver_->JntToCart(qd_, fKine_des_Frame_);
-
-      //  double velX_des, velY_des, velZ_des;
-      //  fKine_pos_Frame_.M.GetRPY(rotX_pos, rotY_pos, rotZ_pos);
-      //  fKine_des_Frame_.M.GetRPY(rotX_des, rotY_des, rotZ_des);
 
 
-        KDL::JntArray Xe_, Xe_raw, Xd_dot;
-        Xe_.resize(6), Xd_dot.resize(6), Xe_raw.resize(6);
-        ex_temp_ = diff(fKine_pos_Frame_, fKine_des_Frame_);
-
-        Xe_raw(0) = ex_temp_(0);
-        Xe_raw(1) = ex_temp_(1);
-        Xe_raw(2) = ex_temp_(2);
-        Xe_raw(3) = ex_temp_(3);
-        Xe_raw(4) = ex_temp_(4);
-        Xe_raw(5) = ex_temp_(5);
-
-        Xe_.data = K_kine_.data.cwiseProduct(Xe_raw.data);
- 
-        Xd_dot.data = Jacobian_q_.data * qd_dot_.data;
-        jnt_to_jac_solver_->JntToJac(q_, Jacobian_q_);
-
-        for(int i = 0; i < 6; i++){
-            Xe_.data(i) += Xd_dot(i);
-        }
-        
-        // Output of kinematic controller
-        qdot_c_.data = Jacobian_q_.data.inverse() * Xe_.data;
-        
-        // *** 2.2.2 gravity + PD as in slides ***
-        tau_PD_grav_.data = G_.data + Kp_.data.cwiseProduct(e_.data) - Kd_.data.cwiseProduct(qdot_.data);
 
 
         // *** 2.3 Apply Torque Command to Actuator ***
 
         // Use 'e_dot_.data = qdot_c_.data - qdot_.data' for kinematic controller. 
         // Otherwise use 'e_dot_.data = qd_dot_.data - qdot_.data'.
-        e_dot_.data = qdot_c_.data - qdot_.data;
-        aux_d_.data = M_.data * (qd_ddot_.data + Kd_.data.cwiseProduct(e_dot_.data));
-        comp_d_.data = C_.data + G_.data;
+     //   e_dot_.data = qdot_c_.data - qdot_.data;
+        //aux_d_.data = M_.data * (qd_ddot_.data + Kd_.data.cwiseProduct(e_dot_.data));
+       // aux_d_.data = J_transpose_ * ex_ * (Kp_.data.cwiseProduct(ex_) - Kd_.data.cwiseProduct(J_.data * ex_) * qdot_.data);
+        aux_d_.data = J_Ad.data.transpose() * (Kp_.data.cwiseProduct(ex_) - Kd_.data.cwiseProduct(J_Ad.data * qdot_.data));
+        comp_d_.data =  G_.data;
         tau_d_.data = aux_d_.data + comp_d_.data;
 
-        // THIS IS UNUSED
-        qddot_.data = M_.data.inverse() * (tau_d_.data - (C_.data + G_.data));
-
+        // *** 2.2.2 gravity + PD as in slides ***
+        if(t < 4)
+            tau_d_.data = G_.data + Kp_.data.cwiseProduct(e_.data) - Kd_.data.cwiseProduct(qdot_.data);
 
         for (int i = 0; i < n_joints_; i++)
         {
@@ -401,14 +467,31 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
 
     void updateCam(const geometry_msgs::TransformStamped c_pose)
     {
+      if( !aruco_detected){
+        double Kp_pbvs = 60;
+        double Kd_pbvs = 22;
+        Kp_(0) = Kp_pbvs;
+        Kp_(1) = Kp_pbvs;
+        Kp_(2) = Kp_pbvs;
+        Kp_(3) = Kp_pbvs;
+        Kp_(4) = Kp_pbvs;
+        Kp_(5) = Kp_pbvs;
+        Kd_(0) = Kd_pbvs;
+        Kd_(1) = Kd_pbvs;
+        Kd_(2) = Kd_pbvs;
+        Kd_(3) = Kd_pbvs;
+        Kd_(4) = Kd_pbvs;
+        Kd_(5) = Kd_pbvs;
+      }
+
+        aruco_detected = true;
         tvec[0] = c_pose.transform.translation.x;
         tvec[1] = c_pose.transform.translation.y;
         tvec[2] = c_pose.transform.translation.z;
         rvec[0] = c_pose.transform.rotation.x;
         rvec[1] = c_pose.transform.rotation.y;
         rvec[2] = c_pose.transform.rotation.z;
-        aruco_pose_(6) = c_pose.transform.rotation.w;
-
+        rvec[3] = c_pose.transform.rotation.w;
     }
 
     void save_data()
@@ -619,11 +702,12 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
     KDL::JntArray q_, qdot_, qddot_;
     KDL::JntArray e_, e_dot_, e_int_, e_ddot_;
     KDL::Jacobian Jacobian_q_;
+    KDL::Jacobian J_;
+    Eigen::Matrix<double, 6, 6> J_transpose_;
     boost::scoped_ptr<KDL::ChainFkSolverVel>  FKSolver_vel_;
     boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;                      
-    KDL::JntArray  xdot_;
     KDL::JntArray cam_pose_;
-    KDL::JntArray aruco_pose_;
+    KDL::Frame aruco_pose_;
     cv::Vec3d rvec, tvec;
     cv::Mat R; //holds rotation matrix
     KDL::Frame frame_cam;
@@ -632,10 +716,13 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
     KDL::Frame xd_; // x.p: frame position(3x1), x.m: frame orientation (3x3)
     KDL::Frame x_;
     KDL::Twist ex_temp_;
+    Eigen::Matrix<double, 6, 1> ex_;
+    Eigen::Matrix<double, 6, 1> xdot_;
     boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> FKSolver_;
 
     // Input
     KDL::JntArray aux_d_;
+    KDL::JntArray aux_d_test_;
     KDL::JntArray aux_d_Kpzero_;
     KDL::JntArray comp_d_;
     KDL::JntArray tau_d_;
@@ -674,6 +761,8 @@ class Visual_Servo_Controller : public controller_interface::Controller<hardware
     ros::Publisher pub_SaveData_;
     
     ros::Subscriber sub_cam_;
+
+    bool aruco_detected = false;
 
     // ros message
     std_msgs::Float64MultiArray msg_qd_, msg_q_, msg_e_;
