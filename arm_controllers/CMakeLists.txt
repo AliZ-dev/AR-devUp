@@ -45,6 +45,7 @@ add_library(${PROJECT_NAME}
   src/passivity_controller.cpp
   src/task_space_controller.cpp
   src/visual_servo_controller.cpp
+  src/gravity_controller_reactive.cpp
 )
 
 target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})

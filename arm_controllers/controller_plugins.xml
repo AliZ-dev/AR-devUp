@@ -12,6 +12,12 @@
     </description>
   </class>
 
+  <class name="arm_controllers/GravityControllerReactive" type="arm_controllers::GravityControllerReactive" base_class_type="controller_interface::ControllerBase">
+    <description>
+	    Gravity Controller Reactive
+    </description>
+  </class>
+
   <class name="arm_controllers/Computed_Torque_Controller" type="arm_controllers::Computed_Torque_Controller" base_class_type="controller_interface::ControllerBase">
     <description>
 	    Computed Torque Controller
