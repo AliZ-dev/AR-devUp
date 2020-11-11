@@ -17,7 +17,8 @@
   </group>
   
   <!-- Controller: 
-      - adaptive_impedance_controller -->
+      - adaptive_impedance_controller
+      - gravity_controller_reactive -->
   <rosparam file="$(find elfin_gazebo)/config/$(arg controller).yaml" command="load"/>
 
   <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false"
