@@ -67,6 +67,11 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         Kp_.resize(n_joints_);
         Kd_.resize(n_joints_);
         Ki_.resize(n_joints_);
+        seg_jac_1.resize(1);
+        seg_jac_2.resize(2);
+        seg_jac_3.resize(3);
+        seg_jac_4.resize(4);
+        seg_jac_5.resize(5);
         J_.resize(n_joints_);
         K_kine_.resize(n_joints_);
         K_kine_.data(0) = 1.0;
@@ -200,6 +205,28 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         FKSolver_vel_.reset(new KDL::ChainFkSolverVel_recursive(kdl_chain_));
         jnt_to_jac_solver_.reset(new KDL::ChainJntToJacSolver(kdl_chain_));
 
+        kdl_tree_.getChain("world", "elfin_link1", kdl_chain_1);
+        jac_solver_1.reset(new KDL::ChainJntToJacSolver(kdl_chain_1));
+        fk_solver_1.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_1));
+
+        kdl_tree_.getChain("world", "elfin_link2", kdl_chain_2);
+        jac_solver_2.reset(new KDL::ChainJntToJacSolver(kdl_chain_2));
+        fk_solver_2.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_2));
+
+        kdl_tree_.getChain("world", "elfin_link3", kdl_chain_3);
+        jac_solver_3.reset(new KDL::ChainJntToJacSolver(kdl_chain_3));
+        fk_solver_3.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_3));
+
+        kdl_tree_.getChain("world", "elfin_link4", kdl_chain_4);
+        jac_solver_4.reset(new KDL::ChainJntToJacSolver(kdl_chain_4));
+        fk_solver_4.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_4));
+
+        kdl_tree_.getChain("world", "elfin_link5", kdl_chain_5);
+        jac_solver_5.reset(new KDL::ChainJntToJacSolver(kdl_chain_5));
+        fk_solver_5.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_5));
+
+
+
 
         // ********* 5. 각종 변수 초기화 *********
 
@@ -217,6 +244,10 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         ex_ = Eigen::VectorXd::Zero(n_joints_);
         jnt_limits_lower_.data = Eigen::VectorXd::Zero(n_joints_);
         jnt_limits_upper_.data = Eigen::VectorXd::Zero(n_joints_);
+        diff_to_low_.data = Eigen::VectorXd::Zero(n_joints_);
+        diff_to_low_prev_.data = Eigen::VectorXd::Zero(n_joints_);
+        diff_to_upper_.data = Eigen::VectorXd::Zero(n_joints_);
+        diff_to_upper_prev_.data = Eigen::VectorXd::Zero(n_joints_);
         ex_obstacle_prev_ = Eigen::VectorXd::Zero(n_joints_);
 
         obstacle_.p(0) = -0.1;
@@ -270,6 +301,12 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         std::cout << "TABLE HAS: " << interpolated_table_surface_.size() << std::endl;
 
 
+        for(int i = 1; i <= 5; i++){
+            KDL::JntArray arr;
+            arr.data = Eigen::VectorXd::Zero(i);
+            arm_segment_states_.push_back(arr);
+        }
+        std::cout << "JntArrays done " << std::endl;
 
         e_.data = Eigen::VectorXd::Zero(n_joints_);
         e_dot_.data = Eigen::VectorXd::Zero(n_joints_);
@@ -307,7 +344,7 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
     void starting(const ros::Time &time)
     {
         t = 0.0;
-        ROS_INFO("Starting Computed Torque Controller");
+        ROS_INFO("Starting Reactive Controller");
     }
 
     void update(const ros::Time &time, const ros::Duration &period)
@@ -324,16 +361,52 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
             qdot_(i) = joints_[i].getVelocity();
         }
 
+        int segment_length = 1;
+        for(int i = 0; i < 5; i++){
+            for(int j = 1; j <= segment_length; j++){
+                arm_segment_states_[i](j) = q_(j);
+            }
+            segment_length++;
+        }
+
+
+
+        std::vector<KDL::Jacobian> jacobians_;
+        jac_solver_1->JntToJac(arm_segment_states_[0], seg_jac_1);
+        jacobians_.push_back(seg_jac_1);
+
+        jac_solver_2->JntToJac(arm_segment_states_[1], seg_jac_2);
+        jacobians_.push_back(seg_jac_2);
+
+        jac_solver_3->JntToJac(arm_segment_states_[2], seg_jac_3);
+        jacobians_.push_back(seg_jac_3);
+
+        jac_solver_4->JntToJac(arm_segment_states_[3], seg_jac_4);
+        jacobians_.push_back(seg_jac_4);
+
+        jac_solver_5->JntToJac(arm_segment_states_[4], seg_jac_5);
+        jacobians_.push_back(seg_jac_5);
+        
+
+
         // ********* 1. Desired Trajecoty in Joint Space *********
 
         for (size_t i = 0; i < n_joints_; i++)
         {
-        //    qd_ddot_(i) = -M_PI * M_PI / 4 * 45 * KDL::deg2rad * sin(M_PI / 2 * t); 
-        //    qd_dot_(i) = M_PI / 2 * 45 * KDL::deg2rad * cos(M_PI / 2 * t);
-        //    qd_(i) = 45 * KDL::deg2rad * sin(M_PI / 2* t);
+            qd_ddot_(i) = -M_PI * M_PI / 4 * 45 * KDL::deg2rad * sin(M_PI / 2 * t); 
+            qd_dot_(i) = M_PI / 2 * 45 * KDL::deg2rad * cos(M_PI / 2 * t);
+            qd_(i) = 45 * KDL::deg2rad * sin(M_PI / 2* t);
+          //  continue;
+         //  
+            if( t < 1 ){
+                qd_(i) = 0;
+            }
+           // qd_(i) = 0;
             qd_ddot_(i) = 0;
             qd_dot_(i) = 0;
-            if(t < 4){ 
+
+            // This is the sequence to bring the arm to starting position.
+            if(t < 2){ 
                // qd_(i) = 0;
                 qd_(0) = -1.6;
                 qd_(1) = 0;
@@ -344,19 +417,47 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
             }
 
 
-    
-            if(t>4){ 
+            // This is the sweeping sequence.
+            if(t > 2){ 
           //     qd_(i) = 1.57;
                 //qd_(0) = q_(0) + dt*30;
-                qd_(0) += dt/15;
-                qd_(1) = 0;
-                qd_(2) = -1.4; 
-                qd_(3) = 0.01;
-                qd_(4) = -1.57;
-                qd_(5) = 0;
+           //     qd_(0) += dt;
+             //   qd_(1) = 0;
+               // qd_(2) = -1.4; 
+            //    qd_(3) = 0.01;
+              //  qd_(4) = -1.57;
+                //qd_(5) = 0;
               //  qd_(1) = 35 * KDL::deg2rad * sin(M_PI / 2* t);
             }
+            if(t < 1){ 
+               // qd_(i) = 0;
+                qd_(0) = 0;
+                qd_(1) = 0;
+                qd_(2) = 0; 
+                qd_(3) = 0.0;
+                qd_(4) = 0;
+                qd_(5) = 0;
+            }
+
+
+            // This is the sweeping sequence.
+            if(t > 1){ 
+          //     qd_(i) = 1.57;
+                //qd_(0) = q_(0) + dt*30;
+                qd_(0) = 0;
+                //qd_(1) = 0;
+                //qd_(2) = 0; 
+                qd_(1) = -55 * KDL::deg2rad * sin(M_PI * t);
+                qd_(2) = -55 * KDL::deg2rad * sin(M_PI * t);
+                qd_(3) = 0;
+                qd_(4) = 0;
+                qd_(5) = 0;
+
+            }
+
         }
+
+        tau_rep_ = Eigen::VectorXd::Zero(n_joints_);
 
         // *** 2.2.1 Compute model(M,C,G) ***
         id_solver_->JntToMass(q_, M_);
@@ -366,8 +467,6 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
 
         // Apply Joint limits as repulsive forces/torques
         KDL::JntArray diff_q_;
-        KDL::JntArray diff_to_low_;
-        KDL::JntArray diff_to_upper_;
         Subtract(q_, qd_, diff_q_);
         Subtract(q_, jnt_limits_lower_, diff_to_low_);
         Subtract(q_, jnt_limits_upper_, diff_to_upper_);
@@ -391,8 +490,39 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         FKSolver_->JntToCart(jnt_limits_upper_, x_up_lim_);
         FKSolver_->JntToCart(q_, x_);
 
-       // std::cout << "x_: " << x_.p(0) << "  " << x_.p(1) << "  " << x_.p(2) << std::endl;
-       // std::cout << "xd_: " << xd_.p(0) << "  " << xd_.p(1) << "  " << xd_.p(2) << std::endl;
+
+        // Calculate workspace positions for joints and middle parts of links.
+        std::vector<KDL::Frame> arm_segment_states_cart_;
+        std::vector<KDL::Frame> arm_segment_midpoints_states_cart_;
+
+
+
+        KDL::Frame seg_cart_;
+        fk_solver_1->JntToCart(arm_segment_states_[0], seg_cart_);
+        arm_segment_states_cart_.push_back(seg_cart_);
+        fk_solver_2->JntToCart(arm_segment_states_[1], seg_cart_);
+        arm_segment_states_cart_.push_back(seg_cart_);
+        fk_solver_3->JntToCart(arm_segment_states_[2], seg_cart_);
+        arm_segment_states_cart_.push_back(seg_cart_);
+        fk_solver_4->JntToCart(arm_segment_states_[3], seg_cart_);
+        arm_segment_states_cart_.push_back(seg_cart_);
+        fk_solver_5->JntToCart(arm_segment_states_[4], seg_cart_);
+        arm_segment_states_cart_.push_back(seg_cart_);
+
+
+
+
+        for(int i = 0; i < (int)arm_segment_states_cart_.size() - 1; i++){
+            KDL::Frame start_ = arm_segment_states_cart_[i];
+            KDL::Frame end_ = arm_segment_states_cart_[i+1];
+            KDL::Frame mid_point_;
+            mid_point_.p(0) = (start_.p(0) + end_.p(0)) / 2;
+            mid_point_.p(1) = (start_.p(1) + end_.p(1)) / 2;
+            mid_point_.p(2) = (start_.p(2) + end_.p(2)) / 2;
+            mid_point_.M.RPY(0,0,0);
+            arm_segment_midpoints_states_cart_.push_back(mid_point_);
+        }
+
 
         ex_temp_ = diff(x_, xd_);
 
@@ -445,41 +575,41 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         Eigen::Matrix<double, 6, 1> F_rep_upper_; // = (1 / ex_upper_) * (1 / ex_upper_.cwiseProduct(ex_upper_));
         Eigen::Matrix<double, 6, 1> F_obstacle_;
 
-        double Q_star_ = 0.2;
-        
-        for(int i = 0; i < 6; i++){
-        //    if( sqrt( ex_low_(0)*ex_low_(0) + ex_low_(1)*ex_low_(1) + ex_low_(2)*ex_low_(2) ) < 0.1){
-        //        F_rep_lower_(i) = -0.01*(1 / ex_low_(i)) * (1 / (ex_low_(i) * ex_low_(i)));
-        //    }
-        //    else{
-        //        F_rep_lower_(i) = 0;
-       //     }
-       //     if( sqrt( ex_upper_(0)*ex_upper_(0) + ex_upper_(1)*ex_upper_(1) + ex_upper_(2)*ex_upper_(2) ) < 0.1){
-       //         F_rep_upper_(i) = -0.01*(1 / ex_upper_(i)) * (1 / (ex_upper_(i) * ex_upper_(i)));
-       //     }
-       //     else{
-       //         F_rep_upper_(i) = 0;
-       //     }
 
-            if( sqrt( ex_obstacle_(0)*ex_obstacle_(0) + ex_obstacle_(1)*ex_obstacle_(1) + ex_obstacle_(2)*ex_obstacle_(2) ) < Q_star_){
-                F_obstacle_(i) = -0.01*(1 / ex_obstacle_(i) - 1 / Q_star_) * (1 / (ex_obstacle_(i) * ex_obstacle_(i)) * -grad_D_(i));
-                //F_obstacle_(i) = 0;
+        // This is where the joint limits are applied.
+        double Q_star_ = 0.0;
+        
+        Eigen::Matrix<double, 6, 1> grad_D_low_ = diff_to_low_.data - diff_to_low_prev_.data;
+        Eigen::Matrix<double, 6, 1> grad_D_upper_ = diff_to_upper_.data - diff_to_upper_prev_.data;
+        for(int i = 0; i < 6; i++){
+
+            // UNCOMMENT THIS break to include joint limit forces.
+             break;
+            if( abs(diff_to_low_(i)) < Q_star_ ){
+                tau_rep_(i) += 0.001*(1 / diff_to_low_(i) - 1 / Q_star_) * (1 / diff_to_low_(i) - 1 / Q_star_);
             }
-            else{
-                F_obstacle_(i) = 0;
+            if( abs(diff_to_upper_(i)) < Q_star_){
+                tau_rep_(i) += -0.001 * (1 / diff_to_upper_(i) - 1 / Q_star_) * (1 / diff_to_upper_(i) - 1 / Q_star_);
             }
         }
+        diff_to_low_prev_ = diff_to_low_;
+        diff_to_upper_prev_ = diff_to_upper_;
 
-        double Q_star_table_ = 0.16;
+
+
+
+
+        double Q_star_table_ = 0.22;
         double closest_dist_ = 999;
         int closest_idx_ = -2;
         Eigen::Matrix<double, 6, 1> ex_table_point_ = Eigen::VectorXd::Zero(6);
         Eigen::Matrix<double, 6, 1> ex_closest_table_point_ = Eigen::VectorXd::Zero(6);
         Eigen::Matrix<double, 6, 1> F_rep_table_total_ = Eigen::VectorXd::Zero(6);
 
-        Eigen::Matrix<double ,6, 1> tau_rep_;
-        // Include repulsion field of the table
+
+        // Include repulsion field of the table WRT end effector only.
         for(int i = 0; i < (int)interpolated_table_surface_.size(); i++){
+           // break;
             KDL::Vector curr_table_point_ = interpolated_table_surface_[i];
             ex_table_point_(0) = curr_table_point_(0) - x_.p(0);
             ex_table_point_(1) = curr_table_point_(1) - x_.p(1);
@@ -492,30 +622,75 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
                 closest_idx_ = i;
                 ex_closest_table_point_ = -ex_table_point_;
                 
-
                 Eigen::Matrix<double, 6, 1> grad_D_table_ = ex_table_point_ - table_point_distances_prev_[i];
 
-                std::cout << " DIST: " << table_point_distances_prev_[i](0) << " " << table_point_distances_prev_[i](1) << " " << table_point_distances_prev_[i](2) << std::endl;
-                for(int i = 0; i < 3; i++){
-                    F_rep_table_total_(2) = -10.0*(1 / ex_table_point_(2) - 1 / Q_star_table_) * (1 / (ex_table_point_(2) * ex_table_point_(2)) * -grad_D_table_(2));
-                   // F_rep_table_total_(i) = -10*(1 / ex_table_point_(i) - 1 / Q_star_table_) * (1 / (ex_table_point_(i) * ex_table_point_(i)) * -grad_D_table_(i));
+
+                F_rep_table_total_(0) = -0.1 * (1 / ex_table_point_(0) - 1 / Q_star_table_) * (1 / (ex_table_point_(0) * ex_table_point_(0)) * -grad_D_table_(0));
+                F_rep_table_total_(1) = -0.1 * (1 / ex_table_point_(1) - 1 / Q_star_table_) * (1 / (ex_table_point_(1) * ex_table_point_(1)) * -grad_D_table_(1));
+                F_rep_table_total_(2) = -10 * (1 / ex_table_point_(2) - 1 / Q_star_table_) * (1 / (ex_table_point_(2) * ex_table_point_(2)) * -grad_D_table_(2));
+                for(int f = 0; f < 3; f++){
+                    if( F_rep_table_total_(f) > 500 ){
+                        F_rep_table_total_(f) = 500;
+                    }
                 }
-               //tau_rep_ += J_.data.transpose() * F_rep_table_total_ - Kd_.data * qdot_.data;
-               tau_rep_ += J_.data.transpose() * F_rep_table_total_ + M_.data * qdot_.data;
+                
+                // UNCOMMENT THIS to include the tables repulsion forces in the arm.
+               tau_rep_ += J_.data.transpose() * F_rep_table_total_;
             }
         }
 
 
 
-        if(closest_idx_ != -2 && closest_dist_ < Q_star_table_){
-            Eigen::Matrix<double, 6, 1> grad_D_table_ = ex_closest_table_point_ - table_point_distances_prev_[closest_idx_];
-            //for(int i = 0; i < 3; i++){
-           //     F_rep_table_total_(i) = 0.1*(1 / ex_closest_table_point_(i) - 1 / Q_star_table_) * (1 / (ex_closest_table_point_(i) * ex_closest_table_point_(i))) * -grad_D_table_(i);
-         //   }
+
+        // Include repulsion field of the table WRT all physical points of arm.
+        for(int i = 0; i < (int)interpolated_table_surface_.size(); i++){
+          // break;
+            KDL::Vector curr_table_point_ = interpolated_table_surface_[i];
+
+            for(int a = 1; a < (int)arm_segment_states_cart_.size(); a++ ){
+                KDL::Frame arm_point_ = arm_segment_states_cart_[a];
+                ex_table_point_(0) = curr_table_point_(0) - arm_point_.p(0);
+                ex_table_point_(1) = curr_table_point_(1) - arm_point_.p(1);
+                ex_table_point_(2) = curr_table_point_(2) - arm_point_.p(2);
+                table_point_distances_arm_[a][i] = -ex_table_point_;
+
+                double dist = sqrt( ex_table_point_(0)*ex_table_point_(0) + ex_table_point_(1)*ex_table_point_(1) + ex_table_point_(2)*ex_table_point_(2));
+                if( dist < Q_star_table_ ){
+
+                    closest_dist_ = dist;
+                    closest_idx_ = i;
+                    ex_closest_table_point_ = -ex_table_point_;
+
+                    std::cout << "ROWS: " << jacobians_[a].rows()  << " COLUMNS: " << jacobians_[a].columns() << std::endl;
+                    int c_size = jacobians_[a].columns();
+                    //Eigen::VectorXd F_rep_table_total_segs_ = Eigen::VectorXd::Zero(jacobians_[a].columns());
+                    Eigen::Matrix<double, 6, 1> grad_D_table_ = ex_table_point_ - table_point_distances_arm_prev_[a][i];
+
+                   // F_rep_table_total_(0) = -0.01 * (1 / ex_table_point_(0) - 1 / Q_star_table_) * (1 / (ex_table_point_(0) * ex_table_point_(0)) * -grad_D_table_(0));
+                   // F_rep_table_total_(1) = -0.01 * (1 / ex_table_point_(1) - 1 / Q_star_table_) * (1 / (ex_table_point_(1) * ex_table_point_(1)) * -grad_D_table_(1));
+                    F_rep_table_total_(2) = -1 * (1 / ex_table_point_(2) - 1 / Q_star_table_) * (1 / (ex_table_point_(2) * ex_table_point_(2)) * -grad_D_table_(2));
+                    for(int f = 0; f < 3; f++){
+                        if( F_rep_table_total_(f) > 1000 ){
+                            F_rep_table_total_(f) = 1000;
+                        }
+                    }
+                   std::cout << "x: " << F_rep_table_total_(0) << " y: " << F_rep_table_total_(1) << " z: "  << F_rep_table_total_(2) << std::endl;
+                // UNCOMMENT THIS to include the tables repulsion forces in the arm.
+                   Eigen::VectorXd torques = jacobians_[a].data.transpose() * F_rep_table_total_;
+                   for(int t = 0; t < c_size; t++){
+                      tau_rep_(t) += torques(t) - (M_.data * qdot_.data)(t);
+                   }
+                }
+            }
         }
+        tau_rep_ -= M_.data * qdot_.data;
+        
+
+
 
        // ex_table_prev_ = ex_closest_table_point_;
         table_point_distances_prev_ = table_point_distances_;
+        table_point_distances_arm_prev_ = table_point_distances_arm_;
 
         //Eigen::Matrix<double, 6, 1> F_rep_ = F_obstacle_;
         Eigen::Matrix<double, 6, 1> F_rep_ = F_rep_table_total_;
@@ -529,8 +704,6 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         e_.data = qd_.data - q_.data;
         e_dot_.data = qd_dot_.data - qdot_.data;
         e_int_.data = qd_.data - q_.data; // (To do: e_int 업데이트 필요요)
-        
-
 
 
         
@@ -539,8 +712,8 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
         // This can be considered as u_att
         tau_PD_grav_.data = G_.data + Kp_.data.cwiseProduct(e_.data) - Kd_.data.cwiseProduct(qdot_.data);
 
-        //Eigen::Matrix<double ,6, 1> tau_rep_ = J_.data.transpose() * F_rep_ - M_.data * qdot_.data; 
-       // Eigen::Matrix<double ,6, 1> tau_rep_ = J_.data.transpose() * F_rep_ - Kd_.data.cwiseProduct(qdot_.data); 
+        //tau_rep_ = J_.data.transpose() * F_rep_ - M_.data * qdot_.data; 
+       // tau_rep_ = J_.data.transpose() * F_rep_ - Kd_.data.cwiseProduct(qdot_.data); 
         KDL::JntArray tau_total_;
         tau_total_.data = tau_PD_grav_.data + tau_rep_;
         
@@ -783,9 +956,24 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
     KDL::JntArray q_, qdot_, qddot_;
     KDL::JntArray e_, e_dot_, e_int_, e_ddot_;
     KDL::Jacobian J_;
+    KDL::Jacobian seg_jac_1;
+    KDL::Jacobian seg_jac_2;
+    KDL::Jacobian seg_jac_3;
+    KDL::Jacobian seg_jac_4;
+    KDL::Jacobian seg_jac_5;
     boost::scoped_ptr<KDL::ChainFkSolverPos>    FKSolver_;
     boost::scoped_ptr<KDL::ChainFkSolverVel>  FKSolver_vel_;
-    boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;                      
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_; 
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jac_solver_1;  
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jac_solver_2;  
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jac_solver_3;  
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jac_solver_4;  
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jac_solver_5; 
+    boost::scoped_ptr<KDL::ChainFkSolverPos>    fk_solver_1; 
+    boost::scoped_ptr<KDL::ChainFkSolverPos>    fk_solver_2; 
+    boost::scoped_ptr<KDL::ChainFkSolverPos>    fk_solver_3; 
+    boost::scoped_ptr<KDL::ChainFkSolverPos>    fk_solver_4; 
+    boost::scoped_ptr<KDL::ChainFkSolverPos>    fk_solver_5;                     
     KDL::JntArray  xdot_;
     
 
@@ -804,7 +992,14 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
     // Joint limits
     KDL::JntArray jnt_limits_lower_;
     KDL::JntArray jnt_limits_upper_;
+    KDL::JntArray diff_to_low_;
+    KDL::JntArray diff_to_upper_;
+    KDL::JntArray diff_to_low_prev_;
+    KDL::JntArray diff_to_upper_prev_;
     KDL::Frame obstacle_;
+    std::vector<KDL::JntArray> arm_segment_states_;
+   
+
     Eigen::Matrix<double, 6, 1> ex_obstacle_prev_;
     Eigen::Matrix<double, 3, 1> ex_table_prev_;
     KDL::Vector table_corner_1;
@@ -814,6 +1009,10 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
     std::vector<KDL::Vector> interpolated_table_surface_;
     std::map<int, Eigen::Matrix<double, 6, 1>> table_point_distances_;
     std::map<int, Eigen::Matrix<double, 6, 1>> table_point_distances_prev_;
+    std::map<int, std::map<int, Eigen::Matrix<double, 6, 1>>> table_point_distances_arm_;
+    std::map<int, std::map<int, Eigen::Matrix<double, 6, 1>>> table_point_distances_arm_prev_;
+    Eigen::Matrix<double ,6, 1> tau_rep_;
+    std::vector<boost::scoped_ptr<KDL::ChainJntToJacSolver>> jac_seg_solvers_;
 
 
     // gains
@@ -825,6 +1024,13 @@ class GravityControllerReactive : public controller_interface::Controller<hardwa
     KDL::Frame x_;
     KDL::FrameVel fKine_vel_Frame_;
     KDL::JntArrayVel qdot_vel_array_;
+
+    KDL::Chain kdl_chain_1;
+    KDL::Chain kdl_chain_2;
+    KDL::Chain kdl_chain_3;
+    KDL::Chain kdl_chain_4;
+    KDL::Chain kdl_chain_5;
+
 
 
     // save the data
