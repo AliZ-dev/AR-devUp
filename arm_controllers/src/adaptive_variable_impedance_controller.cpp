@@ -14,11 +14,20 @@
 #include <kdl/kdl.hpp>
 #include <kdl/chain.hpp>
 #include <kdl/chaindynparam.hpp>
+#include <kdl/chainfksolvervel_recursive.hpp>
 #include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/chainiksolvervel_pinv.hpp>
 #include <kdl/chainiksolverpos_nr_jl.hpp>
 #include <kdl_parser/kdl_parser.hpp>
 #include <tf_conversions/tf_kdl.h>
+#include <kdl/chainjnttojacsolver.hpp>        // jacobian
+#include <kdl/chainjnttojacdotsolver.hpp>
+#include <kdl/jntarrayvel.hpp>
+
+#include <math.h>
+#include <Eigen/LU>
+#include <utils/pseudo_inversion.h>
+#include <utils/skew_symmetric.h>
 
 #include <boost/scoped_ptr.hpp>
 
@@ -118,11 +127,12 @@ namespace arm_controllers{
 
 			gravity_ = KDL::Vector::Zero();
 			gravity_(2) = -9.81;
-			G_.resize(n_joints_);	
+			G_.resize(n_joints_);
 			
 			// inverse dynamics solver
 			id_solver_.reset( new KDL::ChainDynParam(kdl_chain_, gravity_) );
 			fk_solver_.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_));
+			fk_solver_vel_.reset(new KDL::ChainFkSolverVel_recursive(kdl_chain_));
 			ik_vel_solver_.reset(new KDL::ChainIkSolverVel_pinv(kdl_chain_));
 			//ik_pos_solver_.reset(new KDL::ChainIkSolverPos_NR_JL(kdl_chain_, fk_solver_, ik_vel_solver_));
 
@@ -142,6 +152,23 @@ namespace arm_controllers{
 			qdot_.data = Eigen::VectorXd::Zero(n_joints_);
 			qdot_old_.data = Eigen::VectorXd::Zero(n_joints_);
 			qddot_.data = Eigen::VectorXd::Zero(n_joints_);
+
+                        jnt_to_jac_dot_solver_.reset(new KDL::ChainJntToJacDotSolver(kdl_chain_));
+                        J_.resize(n_joints_);
+                        Jdot_.resize(n_joints_);
+                        jnt_to_jac_solver_.reset(new KDL::ChainJntToJacSolver(kdl_chain_));
+                        qdot_vel_array_.q.data = Eigen::VectorXd::Zero(n_joints_);
+                        qdot_vel_array_.qdot.data = Eigen::VectorXd::Zero(n_joints_);
+                        Kp_task_contr_.data = Eigen::VectorXd::Zero(6);
+                        Kd_task_contr_.data = Eigen::VectorXd::Zero(6);
+                        C_.resize(n_joints_);
+                        Inertia_.resize(n_joints_);
+        
+			for (size_t i = 0; i < 6; i++)
+			{
+				Kp_task_contr_(i) = 100.0;
+				Kd_task_contr_(i) = 20.0;
+			}
 
 			for (size_t i = 0; i < 6; i++)
 			{
@@ -377,8 +404,62 @@ namespace arm_controllers{
 
 			double db = 0.001;
 
+
 			q_error.data = q_cmd_.data - q_.data;
 			q_error_dot.data = qdot_cmd_.data - qdot_.data;
+
+                        KDL::Frame x_;
+                        KDL::FrameVel xdot_des_frame_, xdot_frame_;
+                        KDL::Twist ex_temp_;
+                        Eigen::Matrix<double, 6, 1> ex_, ex_dot_, ex_ddot_;
+                        KDL::JntArrayVel q_cmd_vel_;
+                        q_cmd_vel_.q.data = Eigen::VectorXd::Zero(n_joints_);
+                        q_cmd_vel_.qdot.data = Eigen::VectorXd::Zero(n_joints_);
+                        q_cmd_vel_.q.data = q_cmd_.data;
+                        q_cmd_vel_.qdot.data = qdot_cmd_.data;
+
+                        KDL::JntArrayVel q_vel_;
+                        q_vel_.q.data = Eigen::VectorXd::Zero(n_joints_);
+                        q_vel_.qdot.data = Eigen::VectorXd::Zero(n_joints_);
+                        q_vel_.q.data = q_.data;
+                        q_vel_.qdot.data = qdot_.data;
+
+
+                        // Task space control for target calculated by impedance control:
+			fk_solver_->JntToCart(q_cmd_, Xdes);
+                        fk_solver_->JntToCart(q_, x_);
+                        fk_solver_vel_->JntToCart(q_cmd_vel_, xdot_des_frame_);
+                        fk_solver_vel_->JntToCart(q_vel_, xdot_frame_);
+                        
+
+
+                        ex_temp_ = diff(x_, Xdes);
+                        ex_(0) = ex_temp_(0);
+                        ex_(1) = ex_temp_(1);
+                        ex_(2) = ex_temp_(2);
+                        ex_(3) = ex_temp_(3);
+                        ex_(4) = ex_temp_(4);
+                        ex_(5) = ex_temp_(5);
+
+                        KDL::Twist xdot_des_ = xdot_des_frame_.GetTwist();
+                        KDL::Twist xdot_ = xdot_frame_.GetTwist();
+                        KDL::Twist ex_dot_twist_ = -1*(Xc_dot_ - xdot_);
+                        ex_dot_(0) = ex_dot_twist_.vel(0);
+                        ex_dot_(1) = ex_dot_twist_.vel(1);
+                        ex_dot_(2) = ex_dot_twist_.vel(2);
+                        ex_dot_(3) = ex_dot_twist_.rot(0);
+                        ex_dot_(4) = ex_dot_twist_.rot(1);
+                        ex_dot_(5) = ex_dot_twist_.rot(2);
+
+                        ex_ddot_(0) = Xc_ddot_.vel(0);
+                        ex_ddot_(1) = Xc_ddot_.vel(1);
+                        ex_ddot_(2) = Xc_ddot_.vel(2);
+                        ex_ddot_(3) = Xc_ddot_.rot(0);
+                        ex_ddot_(4) = Xc_ddot_.rot(1);
+                        ex_ddot_(5) = Xc_ddot_.rot(2);
+
+
+
 
 			for(size_t i=0; i<n_joints_; i++)
 			{
@@ -402,12 +483,63 @@ namespace arm_controllers{
 				Mbar_(i) = Mbar_(i) + dt_*Mbar_dot_(i);
 			}
 
+                        id_solver_->JntToMass(q_, Inertia_);
+                        id_solver_->JntToCoriolis(q_, qdot_, C_);
+                        id_solver_->JntToGravity(q_, G_); 
+
+
+
+                        qdot_vel_array_.q.data = q_error.data;
+                        qdot_vel_array_.qdot.data = q_error_dot.data;
+
+                        KDL::Twist J_dot_q_dot_;
+                        jnt_to_jac_dot_solver_->JntToJacDot(qdot_vel_array_, Jdot_);
+                        jnt_to_jac_dot_solver_->JntToJacDot(qdot_vel_array_, J_dot_q_dot_);
+                        jnt_to_jac_solver_->JntToJac(q_, J_);
+
+
+                        KDL::JntArray J_dot_q_dot_array_; J_dot_q_dot_array_.resize(6);
+                        J_dot_q_dot_array_(0) = J_dot_q_dot_(0);
+                        J_dot_q_dot_array_(1) = J_dot_q_dot_(1);
+                        J_dot_q_dot_array_(2) = J_dot_q_dot_(2);
+                        J_dot_q_dot_array_(3) = J_dot_q_dot_(3); 
+                        J_dot_q_dot_array_(4) = J_dot_q_dot_(4); 
+                        J_dot_q_dot_array_(5) = J_dot_q_dot_(5); 
+
+                        Eigen::Matrix<double, 6, 1> forces_;
+                        forces_(0) = f_cur_(0);
+                        forces_(1) = f_cur_(1);
+                        forces_(2) = f_cur_(2);
+                        forces_(3) = f_cur_(3);
+                        forces_(4) = f_cur_(4);
+                        forces_(5) = f_cur_(5);
+
+                        Eigen::Matrix<double, 6, 1> Mbar_6_;
+                        Eigen::Matrix<double, 6, 1> Mbar_6_inv_;
+
+                        for(int i = 0; i < 6; i++){
+                            
+                        }
+
+
+                        tau_cmd_.data = Inertia_.data * J_.data.transpose() * ( ex_ddot_ - Kd_task_contr_.data.cwiseProduct(ex_dot_) + Kp_task_contr_.data.cwiseProduct(ex_) - J_dot_q_dot_array_.data) + C_.data + G_.data + J_.data.transpose() * forces_;
+
+
 			// torque command
 			for(size_t i=0; i<n_joints_; i++)
 			{
+                            if (total_time_ >= 28.0 && total_time_ < 48.0)
+			    {
+				//tde(i) = tau_cmd_old_(i) - Mbar_(i)*qddot_(i);
+		              //  tau_cmd_(i) = ded(i) + C_(i) + G_(i); 
+			    }
+                            else{
+                                // Original
 				ded(i) = qddot_cmd_(i) + 2.0 * Ramda_(i)*q_error(i) + Ramda_(i)*Ramda_(i)*q_error_dot(i);
 				tde(i) = tau_cmd_old_(i) - Mbar_(i)*qddot_(i);
 				tau_cmd_(i) = Mbar_(i)*ded(i) + tde(i);
+
+                            }
 			}
 
 			for(size_t i=0; i<n_joints_; i++)
@@ -418,9 +550,7 @@ namespace arm_controllers{
 			tau_cmd_old_.data = tau_cmd_.data;
 			qdot_old_.data = qdot_.data;
 
-			KDL::Frame Xdes;
 
-			fk_solver_->JntToCart(q_cmd_, Xdes);
 
 			SaveData_[0] = total_time_;
 			SaveData_[1] = 0.122;
@@ -636,9 +766,12 @@ namespace arm_controllers{
 		KDL::Chain	kdl_chain_;
 		boost::scoped_ptr<KDL::ChainDynParam> id_solver_;	
 		boost::scoped_ptr<KDL::ChainFkSolverPos> fk_solver_;
+                boost::scoped_ptr<KDL::ChainFkSolverVel> fk_solver_vel_;
 		boost::scoped_ptr<KDL::ChainIkSolverVel_pinv> ik_vel_solver_;
 		boost::scoped_ptr<KDL::ChainIkSolverPos_NR_JL> ik_pos_solver_;
 		KDL::JntArray G_; 
+                KDL::JntSpaceInertiaMatrix Inertia_; // intertia matrix
+                KDL::JntArray C_; 
 		KDL::Vector gravity_;
 
 		// tdc gain
@@ -662,6 +795,18 @@ namespace arm_controllers{
 		double Fd_, Fd_temp_, Fd_old_, Fe_, Fe_old_;
 		double M_, B_, del_B_, B_buffer_;
 		double PI_, PI_old_;
+
+                KDL::Jacobian J_;
+                KDL::Jacobian Jdot_;
+                KDL::JntArrayVel qdot_vel_array_;
+                boost::scoped_ptr<KDL::ChainJntToJacDotSolver> jnt_to_jac_dot_solver_;
+                boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;
+
+                KDL::JntArray Kp_task_contr_;
+                KDL::JntArray Kd_task_contr_;
+
+		KDL::Frame Xdes;
+                
 
 		double dt_;
 		double time_;
