@@ -9,10 +9,25 @@
 
   <!-- Workpiece Model -->
   <group ns="box">
-    <param name="robot_description" command="$(find xacro)/xacro.py --inorder '$(find elfin_description)/urdf/box.urdf.xacro'" />
+    <param name="robot_description" command="$(find xacro)/xacro.py --inorder '$(find elfin_description)/urdf/box_small.urdf.xacro'" />
       
-    <node name="urdf_spawner2" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen" args="-urdf -model box -param robot_description"/> 
+    <node name="urdf_spawner2" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen" args="-urdf -model box1 -param robot_description -x 0.1 -y -0.3 -z -0.1"/> 
   </group>
+
+  <!-- Workpiece Model -->
+  <group ns="box">
+    <param name="robot_description" command="$(find xacro)/xacro.py --inorder '$(find elfin_description)/urdf/box_small.urdf.xacro'" />
+      
+    <node name="urdf_spawner3" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen" args="-urdf -model box2 -param robot_description -x 0.1 -y 0.3 -z -0.1"/> 
+  </group>
+
+  <!-- Workpiece Model -->
+  <group ns="box">
+    <param name="robot_description" command="$(find xacro)/xacro.py --inorder '$(find elfin_description)/urdf/box_small.urdf.xacro'" />
+      
+    <node name="urdf_spawner4" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen" args="-urdf -model box3 -param robot_description"/> 
+  </group>
+
 
   <!-- Controller: 
       - custom_torque_controller
@@ -22,6 +37,7 @@
       - time_delay_controller
       - computed_torque_clik_controller
       - gravity_controller_reactive
+      - demo_controller
       - task_space_controller -->
   <rosparam file="$(find elfin_gazebo)/config/$(arg controller).yaml" command="load"/>
 

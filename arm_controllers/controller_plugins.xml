@@ -18,6 +18,12 @@
     </description>
   </class>
 
+  <class name="arm_controllers/DemoController" type="arm_controllers::DemoController" base_class_type="controller_interface::ControllerBase">
+    <description>
+	    Demo Controller Reactive
+    </description>
+  </class>
+
   <class name="arm_controllers/Computed_Torque_Controller" type="arm_controllers::Computed_Torque_Controller" base_class_type="controller_interface::ControllerBase">
     <description>
 	    Computed Torque Controller
